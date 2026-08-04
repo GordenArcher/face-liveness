@@ -111,8 +111,8 @@ cd ml
 pip install -r requirements.txt
 ```
 
-Get the dataset first, see `ml/data/README.md`, it isn't a one-click
-download.
+Get the dataset first, see `ml/data/README.md` for which of the three
+available formats to use.
 
 ```
 python src/train_baseline.py
@@ -132,9 +132,10 @@ anyone noticing.
 
 - **[NUAA Photograph Imposter
   Database](https://parnec.nuaa.edu.cn/_upload/tpl/02/db/731/template731/pages/xtan/NUAAImposterDB_download.html)**,
-  small, print-attack-only. Not a direct download: requires signing a
-  release agreement and emailing the dataset owner. See
-  `ml/data/README.md` for the full process. Used for M1/M2.
+  small, print-attack-only. Direct download via Google Drive, no
+  agreement required. Three formats are offered, use the
+  face-detector-output one, see `ml/data/README.md` for details. Used
+  for M1/M2.
 - **[CelebA-Spoof](https://github.com/ZhangYuanhan-AI/CelebA-Spoof)**,
   larger, covers print, replay, and mask attacks. Distributed via
   Google Drive/Baidu links, sometimes behind a request form. Used for
