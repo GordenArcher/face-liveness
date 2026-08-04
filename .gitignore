@@ -1,0 +1,14 @@
+# dataset, real biometric data, never committed
+ml/data/raw/
+
+# trained model artifacts, regenerate via train_baseline.py
+ml/models/*.joblib
+ml/models/split.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+.DS_Store
