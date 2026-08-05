@@ -91,20 +91,22 @@ set while its APCER sits at 100%.
 
 ## Status
 
-| Milestone                                  | Status       | Notes                                                         |
-| ------------------------------------------ | ------------ | ------------------------------------------------------------- |
-| M1: LBP + SVM baseline                     | code written | not yet run against real data, needs the NUAA dataset         |
-| M2: small CNN from scratch                 | not started  | trained against the same split as M1 for a direct comparison  |
-| M3: generalization stretch (CelebA-Spoof)  | not started  | tests whether M2 overfits to NUAA's narrow capture conditions |
-| M4: export to ONNX, serve                  | not started  |                                                               |
-| M5: Go client + encrypted Postgres storage | not started  |                                                               |
-| M6: mTLS between services                  | not started  |                                                               |
+| Milestone                                  | Status      | Notes                                                                           |
+| ------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
+| M1: LBP + SVM baseline                     | done        | ACER 0.0566 (APCER 0.0661, BPCER 0.0470) on NUAA held-out test set, 1522 images |
+| M2: small CNN from scratch                 | in progress | trained against the same split as M1 for a direct comparison                    |
+| M3: generalization stretch (CelebA-Spoof)  | not started | tests whether M2 overfits to NUAA's narrow capture conditions                   |
+| M4: export to ONNX, serve                  | not started |                                                                                 |
+| M5: Go client + encrypted Postgres storage | not started |                                                                                 |
+| M6: mTLS between services                  | not started |                                                                                 |
 
 Sequenced deliberately: classical technique first, so there's a real
 number to compare a neural net against, then a CNN, then a harder
 dataset to find out where that CNN's assumptions break.
 
-## Getting started (M1 baseline)
+## Getting started
+
+### M1: LBP + SVM baseline
 
 ```
 cd ml
@@ -127,6 +129,26 @@ split independently, a later change to the splitting logic could
 silently produce a different held-out set than the one training
 actually used, and the reported numbers would be meaningless without
 anyone noticing.
+
+Actual result on NUAA's held-out test set (1522 images): accuracy
+0.9435, APCER 0.0661, BPCER 0.0470, ACER 0.0566. This is the number M2
+needs to beat for training a CNN to have actually been worth it.
+
+### M2: CNN trained from scratch
+
+Same split as M1, `train_cnn.py` reads `ml/models/split.json` directly
+rather than computing its own, so the comparison against M1's numbers
+above is on identical data.
+
+```
+python src/train_cnn.py
+python src/evaluate_cnn.py
+```
+
+`train_cnn.py` selects the best checkpoint by validation ACER, not
+validation loss, loss is what the optimizer minimizes but it isn't the
+number this project reports, the lowest-loss checkpoint and the
+lowest-ACER checkpoint aren't guaranteed to be the same epoch.
 
 ## Datasets
 
