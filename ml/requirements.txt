@@ -1,8 +1,9 @@
-numpy
-scikit-learn
-scikit-image
-opencv-python
-joblib
-torch
-torchvision
-Pillow
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.2
+scikit-image==0.24.0
+opencv-python==4.10.0.84
+joblib==1.4.2
+torch==2.2.2
+torchvision==0.17.2
+Pillow==12.3.0

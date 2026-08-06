@@ -3,6 +3,7 @@ ml/data/raw/
 
 # trained model artifacts, regenerate via train_baseline.py
 ml/models/*.joblib
+ml/models/*.pt
 ml/models/split.json
 
 # Python

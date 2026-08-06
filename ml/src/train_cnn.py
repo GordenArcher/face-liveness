@@ -67,6 +67,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="DataLoader worker processes; keep 0 on macOS/sandboxed runs where PyTorch shared memory workers can fail",
+    )
     args = parser.parse_args()
 
     split_path = args.model_dir / "split.json"
@@ -83,8 +89,8 @@ def main():
     val_ds = SplitDataset.from_split_file(split_path, "val", EVAL_TRANSFORM)
     print(f"train: {len(train_ds)} images, val: {len(val_ds)} images")
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     model = SpoofCNN().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)

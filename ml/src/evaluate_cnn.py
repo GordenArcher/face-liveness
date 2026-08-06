@@ -24,6 +24,12 @@ def main():
         default=Path(__file__).parent.parent / "models",
     )
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="DataLoader worker processes; keep 0 on macOS/sandboxed runs where PyTorch shared memory workers can fail",
+    )
     args = parser.parse_args()
 
     split_path = args.model_dir / "split.json"
@@ -35,7 +41,7 @@ def main():
 
     test_ds = SplitDataset.from_split_file(split_path, "test", EVAL_TRANSFORM)
     print(f"evaluating on {len(test_ds)} held-out test images")
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     model = SpoofCNN().to(device)
     model.load_state_dict(torch.load(weights_path, map_location=device))

@@ -29,7 +29,10 @@ def load_test_split(model_dir: Path) -> list[Sample]:
         )
     with open(split_path) as f:
         record = json.load(f)
-    return [Sample(path=Path(e["path"]), label=e["label"]) for e in record["test"]]
+    return [
+        Sample(path=Path(e["path"]), label=e["label"], subject_id=Path(e["path"]).parent.name)
+        for e in record["test"]
+    ]
 
 
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:

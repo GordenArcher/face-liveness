@@ -91,26 +91,101 @@ set while its APCER sits at 100%.
 
 ## Status
 
-| Milestone                                  | Status      | Notes                                                                           |
-| ------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
-| M1: LBP + SVM baseline                     | done        | ACER 0.0566 (APCER 0.0661, BPCER 0.0470) on NUAA held-out test set, 1522 images |
-| M2: small CNN from scratch                 | in progress | trained against the same split as M1 for a direct comparison                    |
-| M3: generalization stretch (CelebA-Spoof)  | not started | tests whether M2 overfits to NUAA's narrow capture conditions                   |
-| M4: export to ONNX, serve                  | not started |                                                                                 |
-| M5: Go client + encrypted Postgres storage | not started |                                                                                 |
-| M6: mTLS between services                  | not started |                                                                                 |
+| Milestone                                  | Status             | Notes                                                                                                                                                                                                |
+| ------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1: LBP + SVM baseline                     | done, single split | ACER 0.3300 (APCER 0.0419, BPCER 0.6181) on the corrected subject-disjoint split, 843 test images. High BPCER given how few test subjects there are, see k-fold below for a more robust estimate     |
+| M2: small CNN from scratch                 | done, single split | ACER 0.2216 (APCER 0.0311, BPCER 0.4121), beats M1 on the same split, but the single-split validation signal used for epoch selection turned out to be unreliable, see "A real bug" and k-fold below |
+| M2b: k-fold cross-validation               | in progress        | addresses the single-split validation noise directly, see "Cross-validation" below                                                                                                                   |
+| M3: generalization stretch (CelebA-Spoof)  | not started        | tests whether M2 overfits to NUAA's narrow capture conditions                                                                                                                                        |
+| M4: export to ONNX, serve                  | not started        |                                                                                                                                                                                                      |
+| M5: Go client + encrypted Postgres storage | not started        |                                                                                                                                                                                                      |
+| M6: mTLS between services                  | not started        |                                                                                                                                                                                                      |
 
 Sequenced deliberately: classical technique first, so there's a real
 number to compare a neural net against, then a CNN, then a harder
 dataset to find out where that CNN's assumptions break.
 
+### A real bug: subject leakage in the original split
+
+The first version of `dataset.py` split at the image level, stratified
+by label only. NUAA numbers subjects identically across `ClientFace/`
+and `ImposterFace/` (subject `0007`'s live photos and photos of a spoof
+attack against them are both under a folder named `0007`), and with
+only a few dozen subjects total and thousands of images per subject
+across multiple sessions, an image-level split put the same subject's
+photos in both train and test.
+
+That let a model partly learn "do I recognize this specific person"
+instead of the actual live-vs-spoof texture cue, a shortcut that
+doesn't exist at real verification time against someone the model has
+never seen. It's why the CNN's validation ACER hit exactly 0.0000: not
+a good model, a leaking one.
+
+`dataset.py` now splits by subject, no subject's images appear in more
+than one split. NUAA's total subject count is small (low double digits),
+so this produces a genuinely small number of test subjects, that's an
+honest limitation of the dataset itself, not something to hide by going
+back to a split that would report a better-looking, meaningless number.
+Both M1 and M2 need to be retrained and re-evaluated against this
+corrected split before either result means anything.
+
+### A second real bug: noisy single-split validation
+
+Rerunning M2 on the corrected subject-disjoint split, `train_cnn.py`
+selected its best checkpoint at validation ACER 0.0007, epoch 12 of 15.
+The same model scored 0.2216 ACER on the real held-out test set, a huge
+gap.
+
+With only a handful of subjects in the validation set, val ACER is a
+noisy, high-variance number, it swings based on which specific
+subject's images happen to be easy or hard that particular epoch, not
+purely on genuine model quality. Picking "the single best epoch out of
+15" is itself a form of overfitting to that noise: epoch 12 wasn't
+necessarily a better model, it may just have been the epoch that got
+lucky on a tiny validation set. The test result, not the validation
+result, was the trustworthy number.
+
+### Cross-validation
+
+`kfold.py`, `cross_validate_baseline.py`, and `cross_validate_cnn.py`
+address this directly with subject-disjoint k-fold cross-validation,
+via sklearn's `GroupKFold` (group = subject_id). Every subject serves as
+test data in exactly one fold across the k runs, so the whole dataset
+gets used for evaluation instead of permanently reserving a slice of an
+already-small subject pool as a holdout that never contributes to
+training. Reporting mean and standard deviation across folds is a
+meaningfully more robust estimate than trusting a single split, and the
+standard deviation itself is informative: small means the estimate is
+stable, large is an honest signal it still shouldn't be trusted to one
+decimal place.
+
+Both CV scripts call `kfold.make_folds` with the same `n_splits`, and
+`GroupKFold`'s fold assignment is deterministic for a given input order,
+so the two models are evaluated on identical folds without either
+script needing to explicitly coordinate with the other.
+
+```
+python src/cross_validate_baseline.py
+python src/cross_validate_cnn.py
+```
+
+`cross_validate_cnn.py` trains a fresh model per fold (5 by default),
+expect roughly 5x the runtime of a single `train_cnn.py` run.
+
 ## Getting started
+
+This project is pinned to Python 3.12. The repo includes a
+`.python-version` for pyenv, and the commands below create an isolated
+venv so the scripts do not accidentally run against a system Python
+with missing or mismatched scientific packages.
 
 ### M1: LBP + SVM baseline
 
 ```
 cd ml
-pip install -r requirements.txt
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 Get the dataset first, see `ml/data/README.md` for which of the three
@@ -130,15 +205,11 @@ silently produce a different held-out set than the one training
 actually used, and the reported numbers would be meaningless without
 anyone noticing.
 
-Actual result on NUAA's held-out test set (1522 images): accuracy
-0.9435, APCER 0.0661, BPCER 0.0470, ACER 0.0566. This is the number M2
-needs to beat for training a CNN to have actually been worth it.
-
 ### M2: CNN trained from scratch
 
 Same split as M1, `train_cnn.py` reads `ml/models/split.json` directly
 rather than computing its own, so the comparison against M1's numbers
-above is on identical data.
+is on identical data.
 
 ```
 python src/train_cnn.py
