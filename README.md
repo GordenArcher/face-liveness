@@ -221,6 +221,23 @@ validation loss, loss is what the optimizer minimizes but it isn't the
 number this project reports, the lowest-loss checkpoint and the
 lowest-ACER checkpoint aren't guaranteed to be the same epoch.
 
+### Local liveness inference
+
+`liveness.py` is the integration boundary for the ML side. It loads
+either the baseline or CNN artifacts from `ml/models/` and returns the
+single decision the future service/client needs: whether the liveness
+gate passes and recognition is allowed to continue.
+
+```
+python src/predict_liveness.py path/to/face.jpg --model cnn
+python src/predict_liveness.py path/to/face.jpg --model baseline
+```
+
+The input is expected to be an already-cropped face image. Full-frame
+face detection/alignment and embedding generation are still future
+service work; this command only integrates the trained PAD models into
+a reusable inference path.
+
 ## Datasets
 
 - **[NUAA Photograph Imposter
