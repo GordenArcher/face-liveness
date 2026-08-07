@@ -93,9 +93,9 @@ set while its APCER sits at 100%.
 
 | Milestone                                  | Status             | Notes                                                                                                                                                                                                |
 | ------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M1: LBP + SVM baseline                     | done, single split | ACER 0.3300 (APCER 0.0419, BPCER 0.6181) on the corrected subject-disjoint split, 843 test images. High BPCER given how few test subjects there are, see k-fold below for a more robust estimate     |
-| M2: small CNN from scratch                 | done, single split | ACER 0.2216 (APCER 0.0311, BPCER 0.4121), beats M1 on the same split, but the single-split validation signal used for epoch selection turned out to be unreliable, see "A real bug" and k-fold below |
-| M2b: k-fold cross-validation               | in progress        | addresses the single-split validation noise directly, see "Cross-validation" below                                                                                                                   |
+| M1: LBP + SVM baseline                     | done               | single split ACER 0.3300, k-fold ACER 0.1878 +/- 0.0280                                                                                                                                              |
+| M2: small CNN from scratch                 | done               | single split ACER 0.2216, k-fold ACER 0.0637 +/- 0.0316; clearly beats M1 on NUAA, but APCER still needs threshold/generalization work                                                               |
+| M2b: k-fold cross-validation               | done               | CNN k-fold improves BPCER heavily over M1, but average APCER is still about 10%, see "Cross-validation" below                                                                                        |
 | M3: generalization stretch (CelebA-Spoof)  | not started        | tests whether M2 overfits to NUAA's narrow capture conditions                                                                                                                                        |
 | M4: export to ONNX, serve                  | not started        |                                                                                                                                                                                                      |
 | M5: Go client + encrypted Postgres storage | not started        |                                                                                                                                                                                                      |
@@ -172,6 +172,19 @@ python src/cross_validate_cnn.py
 `cross_validate_cnn.py` trains a fresh model per fold (5 by default),
 expect roughly 5x the runtime of a single `train_cnn.py` run.
 
+Current NUAA 5-fold results:
+
+| Model         | ACER              | APCER             | BPCER             |
+| ------------- | ----------------- | ----------------- | ----------------- |
+| LBP + SVM     | 0.1878 +/- 0.0280 | 0.1031 +/- 0.0919 | 0.2725 +/- 0.0851 |
+| CNN from zero | 0.0637 +/- 0.0316 | 0.1013 +/- 0.0720 | 0.0261 +/- 0.0293 |
+
+The CNN is the better NUAA model by ACER and BPCER, but it has not
+solved the security side of the problem yet: average APCER is still
+about 10%, and fold 5 reached 0.2289 APCER. That means the next ML step
+is threshold tuning and a broader generalization test, not service
+deployment.
+
 ## Getting started
 
 This project is pinned to Python 3.12. The repo includes a
@@ -220,6 +233,22 @@ python src/evaluate_cnn.py
 validation loss, loss is what the optimizer minimizes but it isn't the
 number this project reports, the lowest-loss checkpoint and the
 lowest-ACER checkpoint aren't guaranteed to be the same epoch.
+
+`evaluate_cnn.py` defaults to a 0.5 live-score threshold. To see how a
+stricter gate changes spoof acceptance and live-user rejection, sweep
+thresholds on the saved validation/test split:
+
+```
+python src/sweep_cnn_threshold.py
+python src/sweep_cnn_threshold.py --max-apcer 0.05
+```
+
+The script selects a threshold using validation metrics first, then
+reports that same threshold on the held-out test split. Picking a
+threshold directly from test metrics would overfit the test set and
+make the result look better than it really is. Because NUAA has so few
+subjects, this threshold sweep is diagnostic rather than final policy;
+the chosen gate still needs to be checked on broader data.
 
 ### Local liveness inference
 

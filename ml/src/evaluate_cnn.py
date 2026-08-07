@@ -25,6 +25,12 @@ def main():
     )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="minimum live score required to classify an image as live",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=0,
@@ -53,7 +59,7 @@ def main():
         for images, labels in test_loader:
             images = images.to(device)
             logits = model(images)
-            preds = (torch.sigmoid(logits) >= 0.5).float()
+            preds = (torch.sigmoid(logits) >= args.threshold).float()
             all_labels.append(labels.numpy())
             all_preds.append(preds.cpu().numpy())
 
@@ -62,6 +68,7 @@ def main():
     metrics = compute_metrics(y_true, y_pred)
 
     print()
+    print(f"threshold: {args.threshold:.4f}")
     print(f"accuracy: {metrics['accuracy']:.4f}")
     print(f"APCER:    {metrics['apcer']:.4f}  (spoof samples let through as live)")
     print(f"BPCER:    {metrics['bpcer']:.4f}  (live samples wrongly rejected as spoof)")
