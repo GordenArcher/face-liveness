@@ -281,6 +281,17 @@ Place the dataset under:
 ml/data/celeba_spoof/
 ```
 
+To download from the official Google Drive folder linked by the
+CelebA-Spoof authors:
+
+```
+python src/download_celeba_spoof.py --i-accept-non-commercial-research-terms
+```
+
+The acknowledgement flag is deliberate. CelebA-Spoof is distributed for
+non-commercial research/education use, so the script makes the dataset
+agreement explicit instead of silently pulling biometric data.
+
 The loader looks for split annotations named like `train_label.json`,
 `val_label.json` or `valid_label.json`, and `test_label.json`. Image
 paths in the JSON can be direct paths relative to the dataset root or
