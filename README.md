@@ -96,7 +96,7 @@ set while its APCER sits at 100%.
 | M1: LBP + SVM baseline                     | done               | single split ACER 0.3300, k-fold ACER 0.1878 +/- 0.0280                                                                                                                                              |
 | M2: small CNN from scratch                 | done               | single split ACER 0.2216, k-fold ACER 0.0637 +/- 0.0316; clearly beats M1 on NUAA, but APCER still needs threshold/generalization work                                                               |
 | M2b: k-fold cross-validation               | done               | CNN k-fold improves BPCER heavily over M1, but average APCER is still about 10%, see "Cross-validation" below                                                                                        |
-| M3: generalization stretch (CelebA-Spoof)  | not started        | tests whether M2 overfits to NUAA's narrow capture conditions                                                                                                                                        |
+| M3: generalization stretch (CelebA-Spoof)  | ready to run       | loader, train script, and evaluator are implemented; needs the local CelebA-Spoof dataset download before training                                                                                   |
 | M4: export to ONNX, serve                  | not started        |                                                                                                                                                                                                      |
 | M5: Go client + encrypted Postgres storage | not started        |                                                                                                                                                                                                      |
 | M6: mTLS between services                  | not started        |                                                                                                                                                                                                      |
@@ -266,6 +266,43 @@ The input is expected to be an already-cropped face image. Full-frame
 face detection/alignment and embedding generation are still future
 service work; this command only integrates the trained PAD models into
 a reusable inference path.
+
+### M3: CelebA-Spoof generalization
+
+CelebA-Spoof is the next dataset because NUAA is too small and narrow to
+justify service work by itself. The loader expects the official
+CelebA-Spoof JSON annotation format, where annotation index `40` is the
+spoof type (`0` = live, non-zero = spoof media). The project converts
+that to its internal binary convention: live = `1`, spoof = `0`.
+
+Place the dataset under:
+
+```
+ml/data/celeba_spoof/
+```
+
+The loader looks for split annotations named like `train_label.json`,
+`val_label.json` or `valid_label.json`, and `test_label.json`. Image
+paths in the JSON can be direct paths relative to the dataset root or
+paths under common layouts such as `Data/<split>/...`.
+
+Train and evaluate the CNN on CelebA-Spoof:
+
+```
+python src/train_cnn_celeba.py --epochs 15
+python src/evaluate_cnn_celeba.py
+```
+
+For a quick local smoke run before the full training job:
+
+```
+python src/train_cnn_celeba.py --limit-train 1000 --limit-val 400 --epochs 1
+python src/evaluate_cnn_celeba.py --limit 400
+```
+
+The CelebA-Spoof result is the decision point before Go/service work:
+if the CNN fails to generalize beyond NUAA, serving it would only
+productionize a dataset-specific model.
 
 ## Datasets
 

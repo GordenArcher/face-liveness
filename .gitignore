@@ -1,9 +1,11 @@
 # dataset, real biometric data, never committed
 ml/data/raw/
+ml/data/celeba_spoof/
 
 # trained model artifacts, regenerate via train_baseline.py
 ml/models/*.joblib
 ml/models/*.pt
+ml/models/**/*.pt
 ml/models/split.json
 
 # Python
