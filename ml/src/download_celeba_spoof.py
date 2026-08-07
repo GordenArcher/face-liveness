@@ -16,6 +16,7 @@ registry. This script does three practical things:
 
 import argparse
 import importlib.util
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -57,7 +58,12 @@ def main():
     parser.add_argument(
         "--keep-zips",
         action="store_true",
-        help="keep downloaded zip files after successful extraction",
+        help="keep downloaded zip files and split zip parts after successful extraction",
+    )
+    parser.add_argument(
+        "--strict-folder-limit",
+        action="store_true",
+        help="do not pass gdown's --remaining-ok flag; useful only if the upstream Drive folder layout changes",
     )
     args = parser.parse_args()
 
@@ -65,7 +71,11 @@ def main():
     args.data_root.mkdir(parents=True, exist_ok=True)
 
     if not args.skip_download:
-        download_google_drive_folder(args.google_drive_url, args.data_root)
+        download_google_drive_folder(
+            args.google_drive_url,
+            args.data_root,
+            remaining_ok=not args.strict_folder_limit,
+        )
 
     if not args.no_extract:
         extract_archives(args.data_root, keep_zips=args.keep_zips)
@@ -85,7 +95,7 @@ def require_dataset_terms(accepted: bool) -> None:
     )
 
 
-def download_google_drive_folder(url: str, output_dir: Path) -> None:
+def download_google_drive_folder(url: str, output_dir: Path, remaining_ok: bool) -> None:
     if importlib.util.find_spec("gdown") is None:
         raise SystemExit(
             "gdown is required for the Google Drive folder download. "
@@ -94,23 +104,33 @@ def download_google_drive_folder(url: str, output_dir: Path) -> None:
 
     # I call gdown through its CLI instead of importing private Python
     # APIs because the CLI is the stable interface users already know
-    # from dataset download instructions. This also keeps authentication
-    # and Drive confirmation handling inside gdown, where that brittle
-    # host-specific logic belongs.
+    # from dataset download instructions. `--continue` matters here
+    # because the official folder is large enough that interrupted
+    # downloads are normal, not exceptional; restarting 50 split archive
+    # parts from scratch would waste hours and bandwidth.
     cmd = [
         sys.executable,
         "-m",
         "gdown",
         "--folder",
+        "--continue",
         url,
         "-O",
         str(output_dir),
     ]
+    if remaining_ok:
+        # The official CelebA-Spoof Google Drive folder is a split
+        # archive (`CelebA_Spoof.zip.001` ... `.050`). gdown treats
+        # folders with many files defensively and exits unless this flag
+        # is present. Without it, the download stops before any archive
+        # can be assembled or validated.
+        cmd.append("--remaining-ok")
     print("downloading CelebA-Spoof from Google Drive")
     subprocess.run(cmd, check=True)
 
 
 def extract_archives(data_root: Path, keep_zips: bool) -> None:
+    split_archives = assemble_split_archives(data_root)
     archives = sorted(data_root.rglob("*.zip"))
     if not archives:
         print(f"no zip archives found under {data_root}, skipping extraction")
@@ -122,6 +142,49 @@ def extract_archives(data_root: Path, keep_zips: bool) -> None:
             zf.extractall(data_root)
         if not keep_zips:
             archive.unlink()
+
+    if not keep_zips:
+        for part in split_archives:
+            part.unlink()
+
+
+def assemble_split_archives(data_root: Path) -> list[Path]:
+    split_parts = sorted(data_root.rglob("*.zip.[0-9][0-9][0-9]"))
+    if not split_parts:
+        return []
+
+    groups: dict[Path, list[Path]] = {}
+    for part in split_parts:
+        groups.setdefault(split_archive_base(part), []).append(part)
+
+    for combined_path, parts in groups.items():
+        expected_suffixes = [f"{i:03d}" for i in range(1, len(parts) + 1)]
+        actual_suffixes = [part.suffix.lstrip(".") for part in parts]
+        if actual_suffixes != expected_suffixes:
+            raise SystemExit(
+                f"split archive parts for {combined_path.name} are incomplete or out of order: "
+                f"expected suffixes {expected_suffixes[0]}..{expected_suffixes[-1]}, got {actual_suffixes}"
+            )
+
+        if combined_path.exists():
+            print(f"combined archive already exists: {combined_path}")
+            continue
+
+        print(f"assembling {combined_path} from {len(parts)} split archive parts")
+        # The upstream files are byte-split zip parts, so I stream them
+        # into one normal .zip before using Python's zipfile module. This
+        # avoids shell-specific `cat` assumptions and keeps the recovery
+        # path readable if one numbered part is missing.
+        with open(combined_path, "wb") as combined:
+            for part in parts:
+                with open(part, "rb") as source:
+                    shutil.copyfileobj(source, combined, length=1024 * 1024)
+
+    return split_parts
+
+
+def split_archive_base(part: Path) -> Path:
+    return part.with_suffix("")
 
 
 def validate_prepared_dataset(data_root: Path) -> None:

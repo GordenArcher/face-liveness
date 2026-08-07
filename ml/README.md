@@ -120,7 +120,9 @@ python src/download_celeba_spoof.py --i-accept-non-commercial-research-terms
 ```
 
 The downloader uses `gdown` against the official Google Drive folder,
-extracts zip files under:
+passes `--remaining-ok` because the official folder is published as many
+split files, assembles `CelebA_Spoof.zip.001` style parts into a normal
+zip, extracts it under:
 
 ```
 ml/data/celeba_spoof/
