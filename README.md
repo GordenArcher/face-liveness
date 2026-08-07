@@ -270,50 +270,8 @@ a reusable inference path.
 ### M3: CelebA-Spoof generalization
 
 CelebA-Spoof is the next dataset because NUAA is too small and narrow to
-justify service work by itself. The loader expects the official
-CelebA-Spoof JSON annotation format, where annotation index `40` is the
-spoof type (`0` = live, non-zero = spoof media). The project converts
-that to its internal binary convention: live = `1`, spoof = `0`.
-
-Place the dataset under:
-
-```
-ml/data/celeba_spoof/
-```
-
-To download from the official Google Drive folder linked by the
-CelebA-Spoof authors:
-
-```
-python src/download_celeba_spoof.py --i-accept-non-commercial-research-terms
-```
-
-The acknowledgement flag is deliberate. CelebA-Spoof is distributed for
-non-commercial research/education use, so the script makes the dataset
-agreement explicit instead of silently pulling biometric data.
-
-The loader looks for split annotations named like `train_label.json`,
-`val_label.json` or `valid_label.json`, and `test_label.json`. Image
-paths in the JSON can be direct paths relative to the dataset root or
-paths under common layouts such as `Data/<split>/...`.
-
-Train and evaluate the CNN on CelebA-Spoof:
-
-```
-python src/train_cnn_celeba.py --epochs 15
-python src/evaluate_cnn_celeba.py
-```
-
-For a quick local smoke run before the full training job:
-
-```
-python src/train_cnn_celeba.py --limit-train 1000 --limit-val 400 --epochs 1
-python src/evaluate_cnn_celeba.py --limit 400
-```
-
-The CelebA-Spoof result is the decision point before Go/service work:
-if the CNN fails to generalize beyond NUAA, serving it would only
-productionize a dataset-specific model.
+justify service work by itself. ML-specific setup, download, training,
+evaluation, and threshold commands live in `ml/README.md`.
 
 ## Datasets
 
