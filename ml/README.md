@@ -131,6 +131,21 @@ ml/data/celeba_spoof/
 and validates that train, validation, and test annotation JSON files are
 discoverable.
 
+The dataset is large. The downloader checks for at least `120GiB` of
+free space before it starts because it needs room for downloaded split
+parts and extraction. If the download stops after disk pressure or a
+network interruption, free space and rerun the same command. The
+underlying `gdown` call uses `--continue`, so completed and partial
+parts can resume.
+
+To download to a larger external volume:
+
+```
+./download_celeba_spoof.sh \
+  --data-root /Volumes/big-disk/celeba_spoof \
+  --i-accept-non-commercial-research-terms
+```
+
 Train and evaluate on CelebA-Spoof:
 
 ```

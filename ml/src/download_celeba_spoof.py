@@ -65,10 +65,23 @@ def main():
         action="store_true",
         help="do not pass gdown's --remaining-ok flag; useful only if the upstream Drive folder layout changes",
     )
+    parser.add_argument(
+        "--min-free-gb",
+        type=float,
+        default=120.0,
+        help="minimum free space required at data-root before download/extraction starts",
+    )
+    parser.add_argument(
+        "--skip-space-check",
+        action="store_true",
+        help="skip the free-space preflight check",
+    )
     args = parser.parse_args()
 
     require_dataset_terms(args.i_accept_non_commercial_research_terms)
     args.data_root.mkdir(parents=True, exist_ok=True)
+    if not args.skip_space_check:
+        assert_enough_free_space(args.data_root, args.min_free_gb)
 
     if not args.skip_download:
         download_google_drive_folder(
@@ -126,7 +139,40 @@ def download_google_drive_folder(url: str, output_dir: Path, remaining_ok: bool)
         # can be assembled or validated.
         cmd.append("--remaining-ok")
     print("downloading CelebA-Spoof from Google Drive")
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        if is_no_space_left(output_dir):
+            raise SystemExit(
+                f"download stopped because {output_dir} is out of disk space. "
+                "Free space, then rerun the same command; gdown is called with --continue, "
+                "so completed and partial split archive files can resume."
+            ) from exc
+        raise
+
+
+def assert_enough_free_space(path: Path, min_free_gb: float) -> None:
+    free_bytes = shutil.disk_usage(path).free
+    free_gb = free_bytes / (1024**3)
+    if free_gb >= min_free_gb:
+        return
+
+    raise SystemExit(
+        f"only {free_gb:.1f} GiB free at {path}, but at least {min_free_gb:.1f} GiB is required. "
+        "CelebA-Spoof is distributed as many large split zip parts and also needs extraction room. "
+        "Free disk space, choose a larger --data-root, or rerun with --skip-space-check if you know this is enough."
+    )
+
+
+def is_no_space_left(path: Path) -> bool:
+    try:
+        probe = path / ".space-check.tmp"
+        with open(probe, "wb") as f:
+            f.write(b"0")
+        probe.unlink()
+        return False
+    except OSError as exc:
+        return exc.errno == 28
 
 
 def extract_archives(data_root: Path, keep_zips: bool) -> None:
