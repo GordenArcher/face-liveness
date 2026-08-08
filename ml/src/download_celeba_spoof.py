@@ -53,7 +53,7 @@ def main():
     parser.add_argument(
         "--no-extract",
         action="store_true",
-        help="download/validate only; do not extract zip files",
+        help="download only; do not assemble, extract, or validate annotation files",
     )
     parser.add_argument(
         "--keep-zips",
@@ -93,8 +93,14 @@ def main():
     if not args.no_extract:
         extract_archives(args.data_root, keep_zips=args.keep_zips)
 
-    validate_prepared_dataset(args.data_root)
-    print(f"CelebA-Spoof is ready at {args.data_root}")
+    if args.no_extract:
+        print(
+            f"CelebA-Spoof archive parts are downloaded under {args.data_root}. "
+            "Rerun without --no-extract on a volume with enough free space to assemble, extract, and validate."
+        )
+    else:
+        validate_prepared_dataset(args.data_root)
+        print(f"CelebA-Spoof is ready at {args.data_root}")
 
 
 def require_dataset_terms(accepted: bool) -> None:

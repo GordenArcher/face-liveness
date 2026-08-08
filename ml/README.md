@@ -138,6 +138,19 @@ network interruption, free space and rerun the same command. The
 underlying `gdown` call uses `--continue`, so completed and partial
 parts can resume.
 
+If you only have enough space to finish downloading the split archive
+parts, but not enough to assemble and extract them yet, use:
+
+```
+./download_celeba_spoof.sh \
+  --no-extract \
+  --skip-space-check \
+  --i-accept-non-commercial-research-terms
+```
+
+That resumes the Google Drive parts and stops before assembly,
+extraction, and annotation validation.
+
 To download to a larger external volume:
 
 ```
