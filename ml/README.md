@@ -151,6 +151,26 @@ parts, but not enough to assemble and extract them yet, use:
 That resumes the Google Drive parts and stops before assembly,
 extraction, and annotation validation.
 
+If the split archive parts are already downloaded on the internal disk,
+but the internal disk does not have enough free space to create the
+temporary combined zip, keep the parts where they are and assemble only
+the combined archive on an external volume:
+
+```
+./download_celeba_spoof.sh \
+  --skip-download \
+  --assemble-only \
+  --combined-zip-dir /path/to/external-drive/celeba_spoof \
+  --skip-space-check \
+  --i-accept-non-commercial-research-terms
+```
+
+This command reads the existing `CelebA_Spoof.zip.001` ...
+`CelebA_Spoof.zip.050` files from `ml/data/celeba_spoof/`, writes
+`CelebA_Spoof.zip` to the external volume, and stops before extraction.
+Replace `/path/to/external-drive/celeba_spoof` with the mounted path for
+the external disk. It does not delete the downloaded split parts.
+
 To download to a larger external volume:
 
 ```

@@ -15,6 +15,7 @@ registry. This script does three practical things:
 """
 
 import argparse
+from dataclasses import dataclass
 import importlib.util
 import shutil
 import subprocess
@@ -25,6 +26,12 @@ from pathlib import Path
 from celeba_spoof_dataset import find_annotation_file
 
 OFFICIAL_GOOGLE_DRIVE_URL = "https://drive.google.com/drive/folders/1OW_1bawO79pRqdVEVmBzp8HSxdSwln_Z?usp=sharing"
+
+
+@dataclass(frozen=True)
+class SplitArchiveAssembly:
+    parts: list[Path]
+    combined_archives: list[Path]
 
 
 def main():
@@ -56,6 +63,17 @@ def main():
         help="download only; do not assemble, extract, or validate annotation files",
     )
     parser.add_argument(
+        "--assemble-only",
+        action="store_true",
+        help="assemble already downloaded split zip parts, then stop before extraction and validation",
+    )
+    parser.add_argument(
+        "--combined-zip-dir",
+        type=Path,
+        default=None,
+        help="write the assembled CelebA-Spoof zip to this directory instead of beside the split parts",
+    )
+    parser.add_argument(
         "--keep-zips",
         action="store_true",
         help="keep downloaded zip files and split zip parts after successful extraction",
@@ -80,6 +98,8 @@ def main():
 
     require_dataset_terms(args.i_accept_non_commercial_research_terms)
     args.data_root.mkdir(parents=True, exist_ok=True)
+    if args.combined_zip_dir is not None:
+        args.combined_zip_dir.mkdir(parents=True, exist_ok=True)
     if not args.skip_space_check:
         assert_enough_free_space(args.data_root, args.min_free_gb)
 
@@ -90,8 +110,23 @@ def main():
             remaining_ok=not args.strict_folder_limit,
         )
 
+    if args.assemble_only:
+        assembly = assemble_split_archives(args.data_root, combined_zip_dir=args.combined_zip_dir)
+        if not assembly.combined_archives:
+            print(f"no split zip archive parts found under {args.data_root}")
+            return
+        print("assembled combined archive(s):")
+        for archive in assembly.combined_archives:
+            print(f"- {archive}")
+        print("stopping before extraction because --assemble-only was passed")
+        return
+
     if not args.no_extract:
-        extract_archives(args.data_root, keep_zips=args.keep_zips)
+        extract_archives(
+            args.data_root,
+            keep_zips=args.keep_zips,
+            combined_zip_dir=args.combined_zip_dir,
+        )
 
     if args.no_extract:
         print(
@@ -181,9 +216,15 @@ def is_no_space_left(path: Path) -> bool:
         return exc.errno == 28
 
 
-def extract_archives(data_root: Path, keep_zips: bool) -> None:
-    split_archives = assemble_split_archives(data_root)
+def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | None) -> None:
+    assembly = assemble_split_archives(data_root, combined_zip_dir=combined_zip_dir)
     archives = sorted(data_root.rglob("*.zip"))
+    archive_paths = set(archives)
+    for archive in assembly.combined_archives:
+        if archive not in archive_paths:
+            archives.append(archive)
+            archive_paths.add(archive)
+
     if not archives:
         print(f"no zip archives found under {data_root}, skipping extraction")
         return
@@ -196,18 +237,20 @@ def extract_archives(data_root: Path, keep_zips: bool) -> None:
             archive.unlink()
 
     if not keep_zips:
-        for part in split_archives:
+        for part in assembly.parts:
             part.unlink()
 
 
-def assemble_split_archives(data_root: Path) -> list[Path]:
+def assemble_split_archives(data_root: Path, combined_zip_dir: Path | None) -> SplitArchiveAssembly:
     split_parts = sorted(data_root.rglob("*.zip.[0-9][0-9][0-9]"))
     if not split_parts:
-        return []
+        return SplitArchiveAssembly(parts=[], combined_archives=[])
 
     groups: dict[Path, list[Path]] = {}
     for part in split_parts:
-        groups.setdefault(split_archive_base(part), []).append(part)
+        groups.setdefault(split_archive_base(part, combined_zip_dir=combined_zip_dir), []).append(part)
+
+    combined_archives: list[Path] = []
 
     for combined_path, parts in groups.items():
         expected_suffixes = [f"{i:03d}" for i in range(1, len(parts) + 1)]
@@ -221,6 +264,7 @@ def assemble_split_archives(data_root: Path) -> list[Path]:
         if combined_path.exists():
             if zipfile.is_zipfile(combined_path):
                 print(f"combined archive already exists: {combined_path}")
+                combined_archives.append(combined_path)
                 continue
 
             print(f"removing stale invalid combined archive: {combined_path}")
@@ -228,21 +272,41 @@ def assemble_split_archives(data_root: Path) -> list[Path]:
 
         assert_enough_space_for_combined_archive(combined_path, parts)
 
-        print(f"assembling {combined_path} from {len(parts)} split archive parts")
+        temp_path = combined_path.with_name(f"{combined_path.name}.part")
+        if temp_path.exists():
+            print(f"removing stale partial combined archive: {temp_path}")
+            temp_path.unlink()
+
+        print(f"assembling {combined_path} from {len(parts)} split archive parts", flush=True)
         # The upstream files are byte-split zip parts, so I stream them
         # into one normal .zip before using Python's zipfile module. This
         # avoids shell-specific `cat` assumptions and keeps the recovery
-        # path readable if one numbered part is missing.
-        with open(combined_path, "wb") as combined:
+        # path readable if one numbered part is missing. The destination
+        # can be a different volume from `data_root`; this is important on
+        # small internal disks because the 50 downloaded parts may already
+        # fill most of the machine, while an external drive can still hold
+        # the temporary combined archive. I write to a `.part` file first
+        # and rename only after every split part is copied, otherwise an
+        # interrupted run leaves a corrupt final `CelebA_Spoof.zip` that
+        # looks like the real archive name and causes confusing extraction
+        # failures on the next step.
+        with open(temp_path, "wb") as combined:
             for part in parts:
                 with open(part, "rb") as source:
                     shutil.copyfileobj(source, combined, length=1024 * 1024)
+        temp_path.replace(combined_path)
 
-    return split_parts
+        combined_archives.append(combined_path)
+
+    return SplitArchiveAssembly(parts=split_parts, combined_archives=combined_archives)
 
 
-def split_archive_base(part: Path) -> Path:
-    return part.with_suffix("")
+def split_archive_base(part: Path, combined_zip_dir: Path | None) -> Path:
+    combined_name = part.with_suffix("").name
+    if combined_zip_dir is None:
+        return part.with_suffix("")
+
+    return combined_zip_dir / combined_name
 
 
 def assert_enough_space_for_combined_archive(combined_path: Path, parts: list[Path]) -> None:
