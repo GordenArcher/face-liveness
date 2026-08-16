@@ -219,8 +219,14 @@ def assemble_split_archives(data_root: Path) -> list[Path]:
             )
 
         if combined_path.exists():
-            print(f"combined archive already exists: {combined_path}")
-            continue
+            if zipfile.is_zipfile(combined_path):
+                print(f"combined archive already exists: {combined_path}")
+                continue
+
+            print(f"removing stale invalid combined archive: {combined_path}")
+            combined_path.unlink()
+
+        assert_enough_space_for_combined_archive(combined_path, parts)
 
         print(f"assembling {combined_path} from {len(parts)} split archive parts")
         # The upstream files are byte-split zip parts, so I stream them
@@ -237,6 +243,21 @@ def assemble_split_archives(data_root: Path) -> list[Path]:
 
 def split_archive_base(part: Path) -> Path:
     return part.with_suffix("")
+
+
+def assert_enough_space_for_combined_archive(combined_path: Path, parts: list[Path]) -> None:
+    required_bytes = sum(part.stat().st_size for part in parts)
+    free_bytes = shutil.disk_usage(combined_path.parent).free
+    if free_bytes >= required_bytes:
+        return
+
+    required_gb = required_bytes / (1024**3)
+    free_gb = free_bytes / (1024**3)
+    raise SystemExit(
+        f"all split archive parts are present, but only {free_gb:.1f} GiB is free at {combined_path.parent}. "
+        f"assembling {combined_path.name} requires about {required_gb:.1f} GiB before extraction can start. "
+        "Move the split parts to a larger volume, free more disk space, or rerun with --no-extract to stop after download."
+    )
 
 
 def validate_prepared_dataset(data_root: Path) -> None:
