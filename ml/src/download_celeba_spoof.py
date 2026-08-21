@@ -17,6 +17,7 @@ registry. This script does three practical things:
 import argparse
 from dataclasses import dataclass
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,16 @@ from celeba_spoof_dataset import find_annotation_file
 
 OFFICIAL_GOOGLE_DRIVE_URL = "https://drive.google.com/drive/folders/1OW_1bawO79pRqdVEVmBzp8HSxdSwln_Z?usp=sharing"
 PROGRESS_INTERVAL_SECONDS = 10.0
+USE_COLOR = False
+
+
+class Color:
+    RESET = "\033[0m"
+    DIM = "\033[2m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
 
 
 @dataclass(frozen=True)
@@ -96,7 +107,14 @@ def main():
         action="store_true",
         help="skip the free-space preflight check",
     )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="control colored terminal logs; auto enables color only for interactive terminals",
+    )
     args = parser.parse_args()
+    configure_color(args.color)
 
     require_dataset_terms(args.i_accept_non_commercial_research_terms)
     args.data_root.mkdir(parents=True, exist_ok=True)
@@ -115,12 +133,12 @@ def main():
     if args.assemble_only:
         assembly = assemble_split_archives(args.data_root, combined_zip_dir=args.combined_zip_dir)
         if not assembly.combined_archives:
-            print(f"no split zip archive parts found under {args.data_root}")
+            log_status("skip", f"no split zip archive parts found under {args.data_root}", color=Color.YELLOW)
             return
-        print("assembled combined archive(s):")
+        log_status("done", "assembled combined archive(s):", color=Color.GREEN)
         for archive in assembly.combined_archives:
             print(f"- {archive}")
-        print("stopping before extraction because --assemble-only was passed")
+        log_status("stop", "stopping before extraction because --assemble-only was passed", color=Color.YELLOW)
         return
 
     if not args.no_extract:
@@ -131,13 +149,15 @@ def main():
         )
 
     if args.no_extract:
-        print(
+        log_status(
+            "done",
             f"CelebA-Spoof archive parts are downloaded under {args.data_root}. "
-            "Rerun without --no-extract on a volume with enough free space to assemble, extract, and validate."
+            "Rerun without --no-extract on a volume with enough free space to assemble, extract, and validate.",
+            color=Color.GREEN,
         )
     else:
         validate_prepared_dataset(args.data_root)
-        print(f"CelebA-Spoof is ready at {args.data_root}")
+        log_status("ready", f"CelebA-Spoof is ready at {args.data_root}", color=Color.GREEN)
 
 
 def require_dataset_terms(accepted: bool) -> None:
@@ -181,7 +201,7 @@ def download_google_drive_folder(url: str, output_dir: Path, remaining_ok: bool)
         # is present. Without it, the download stops before any archive
         # can be assembled or validated.
         cmd.append("--remaining-ok")
-    print("downloading CelebA-Spoof from Google Drive")
+    log_status("download", "downloading CelebA-Spoof from Google Drive", color=Color.BLUE)
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as exc:
@@ -228,11 +248,11 @@ def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | 
             archive_paths.add(archive)
 
     if not archives:
-        print(f"no zip archives found under {data_root}, skipping extraction")
+        log_status("skip", f"no zip archives found under {data_root}, skipping extraction", color=Color.YELLOW)
         return
 
     for archive in archives:
-        print(f"extracting {archive}")
+        log_status("extract", f"extracting {archive}", color=Color.BLUE)
         with zipfile.ZipFile(archive) as zf:
             extract_zip_with_progress(zf, data_root)
         if not keep_zips:
@@ -265,21 +285,25 @@ def assemble_split_archives(data_root: Path, combined_zip_dir: Path | None) -> S
 
         if combined_path.exists():
             if zipfile.is_zipfile(combined_path):
-                print(f"combined archive already exists: {combined_path}")
+                log_status("reuse", f"combined archive already exists: {combined_path}", color=Color.GREEN)
                 combined_archives.append(combined_path)
                 continue
 
-            print(f"removing stale invalid combined archive: {combined_path}")
+            log_status("remove", f"removing stale invalid combined archive: {combined_path}", color=Color.YELLOW)
             combined_path.unlink()
 
         assert_enough_space_for_combined_archive(combined_path, parts)
 
         temp_path = combined_path.with_name(f"{combined_path.name}.part")
         if temp_path.exists():
-            print(f"removing stale partial combined archive: {temp_path}")
+            log_status("remove", f"removing stale partial combined archive: {temp_path}", color=Color.YELLOW)
             temp_path.unlink()
 
-        print(f"assembling {combined_path} from {len(parts)} split archive parts", flush=True)
+        log_status(
+            "archive",
+            f"assembling {combined_path} from {len(parts)} split archive parts",
+            color=Color.BLUE,
+        )
         # The upstream files are byte-split zip parts, so I stream them
         # into one normal .zip before using Python's zipfile module. This
         # avoids shell-specific `cat` assumptions and keeps the recovery
@@ -349,8 +373,40 @@ def print_progress(
         return last_progress_at
 
     percent = (current / total * 100) if total else 100.0
-    print(f"{label}: {percent:6.2f}% ({format_bytes(current)} / {format_bytes(total)})", flush=True)
+    progress_line = (
+        f"{paint(label, Color.CYAN)}: "
+        f"{paint(f'{percent:6.2f}%', Color.GREEN)} "
+        f"{paint(f'({format_bytes(current)} / {format_bytes(total)})', Color.DIM)}"
+    )
+    print(progress_line, flush=True)
     return now
+
+
+def configure_color(mode: str) -> None:
+    global USE_COLOR
+
+    # Color is useful when watching a long preparation job in the
+    # terminal, but raw ANSI escapes make copied logs and redirected files
+    # harder to read. `auto` follows the normal CLI convention: color only
+    # when stdout is a TTY and the user has not opted out with NO_COLOR.
+    if mode == "always":
+        USE_COLOR = True
+        return
+    if mode == "never":
+        USE_COLOR = False
+        return
+
+    USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def paint(text: str, color: str) -> str:
+    if not USE_COLOR:
+        return text
+    return f"{color}{text}{Color.RESET}"
+
+
+def log_status(label: str, message: str, color: str = Color.CYAN) -> None:
+    print(f"{paint(label, color)}: {message}", flush=True)
 
 
 def format_bytes(size: int) -> str:

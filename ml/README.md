@@ -131,11 +131,16 @@ ml/data/celeba_spoof/
 and validates that train, validation, and test annotation JSON files are
 discoverable.
 
-Assembly and extraction print percentage progress. If the process is
-still healthy, expect periodic lines such as `assembly: 12.34%` or
-`extraction 1200/625000 files: 45.67%`. Long silence after those phases
-start usually means the external volume is asleep, disconnected, or
-blocked on disk I/O.
+Assembly and extraction print a start line before the long disk work
+begins, then percentage progress while the job runs. If the process is
+still healthy, expect periodic lines such as `archive: assembling ...`,
+`assembly: 12.34%`, or `extraction 1200/625000 files: 45.67%`. Long
+silence after those phases start usually means the external volume is
+asleep, disconnected, or blocked on disk I/O.
+
+Downloader logs use color in an interactive terminal. To force color
+when piping through a command that preserves ANSI escapes, pass
+`--color always`; to keep logs plain, pass `--color never`.
 
 The dataset is large. The downloader checks for at least `120GiB` of
 free space before it starts because it needs room for downloaded split
