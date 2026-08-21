@@ -91,15 +91,15 @@ set while its APCER sits at 100%.
 
 ## Status
 
-| Milestone                                  | Status             | Notes                                                                                                                                                                                                |
-| ------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M1: LBP + SVM baseline                     | done               | single split ACER 0.3300, k-fold ACER 0.1878 +/- 0.0280                                                                                                                                              |
-| M2: small CNN from scratch                 | done               | single split ACER 0.2216, k-fold ACER 0.0637 +/- 0.0316; clearly beats M1 on NUAA, but APCER still needs threshold/generalization work                                                               |
-| M2b: k-fold cross-validation               | done               | CNN k-fold improves BPCER heavily over M1, but average APCER is still about 10%, see "Cross-validation" below                                                                                        |
-| M3: generalization stretch (CelebA-Spoof)  | ready to run       | loader, train script, and evaluator are implemented; needs the local CelebA-Spoof dataset download before training                                                                                   |
-| M4: export to ONNX, serve                  | not started        |                                                                                                                                                                                                      |
-| M5: Go client + encrypted Postgres storage | not started        |                                                                                                                                                                                                      |
-| M6: mTLS between services                  | not started        |                                                                                                                                                                                                      |
+| Milestone                                  | Status       | Notes                                                                                                                                  |
+| ------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| M1: LBP + SVM baseline                     | done         | single split ACER 0.3300, k-fold ACER 0.1878 +/- 0.0280                                                                                |
+| M2: small CNN from scratch                 | done         | single split ACER 0.2216, k-fold ACER 0.0637 +/- 0.0316; clearly beats M1 on NUAA, but APCER still needs threshold/generalization work |
+| M2b: k-fold cross-validation               | done         | CNN k-fold improves BPCER heavily over M1, but average APCER is still about 10%, see "Cross-validation" below                          |
+| M3: generalization stretch (CelebA-Spoof)  | ready to run | loader, train script, and evaluator are implemented; needs the local CelebA-Spoof dataset download before training                     |
+| M4: export to ONNX, serve                  | not started  |                                                                                                                                        |
+| M5: Go client + encrypted Postgres storage | not started  |                                                                                                                                        |
+| M6: mTLS between services                  | not started  |                                                                                                                                        |
 
 Sequenced deliberately: classical technique first, so there's a real
 number to compare a neural net against, then a CNN, then a harder
