@@ -20,12 +20,14 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
 from celeba_spoof_dataset import find_annotation_file
 
 OFFICIAL_GOOGLE_DRIVE_URL = "https://drive.google.com/drive/folders/1OW_1bawO79pRqdVEVmBzp8HSxdSwln_Z?usp=sharing"
+PROGRESS_INTERVAL_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -232,7 +234,7 @@ def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | 
     for archive in archives:
         print(f"extracting {archive}")
         with zipfile.ZipFile(archive) as zf:
-            zf.extractall(data_root)
+            extract_zip_with_progress(zf, data_root)
         if not keep_zips:
             archive.unlink()
 
@@ -291,14 +293,74 @@ def assemble_split_archives(data_root: Path, combined_zip_dir: Path | None) -> S
         # looks like the real archive name and causes confusing extraction
         # failures on the next step.
         with open(temp_path, "wb") as combined:
+            copied_bytes = 0
+            total_bytes = sum(part.stat().st_size for part in parts)
+            last_progress_at = 0.0
             for part in parts:
                 with open(part, "rb") as source:
-                    shutil.copyfileobj(source, combined, length=1024 * 1024)
+                    while chunk := source.read(1024 * 1024):
+                        combined.write(chunk)
+                        copied_bytes += len(chunk)
+                        last_progress_at = print_progress(
+                            label="assembly",
+                            current=copied_bytes,
+                            total=total_bytes,
+                            last_progress_at=last_progress_at,
+                        )
         temp_path.replace(combined_path)
 
         combined_archives.append(combined_path)
 
     return SplitArchiveAssembly(parts=split_parts, combined_archives=combined_archives)
+
+
+def extract_zip_with_progress(zf: zipfile.ZipFile, output_dir: Path) -> None:
+    members = zf.infolist()
+    total_bytes = sum(member.file_size for member in members)
+    extracted_bytes = 0
+    last_progress_at = 0.0
+
+    # `ZipFile.extractall()` is convenient, but it is a poor fit for this
+    # dataset because CelebA-Spoof can spend hours writing a very large
+    # archive without printing anything. I extract one member at a time so
+    # long runs keep reporting both file-count and byte-count progress.
+    # That makes it clear whether the process is still moving, blocked on a
+    # slow external disk, or about to fail because the target volume stopped
+    # accepting writes.
+    for index, member in enumerate(members, start=1):
+        zf.extract(member, output_dir)
+        extracted_bytes += member.file_size
+        last_progress_at = print_progress(
+            label=f"extraction {index}/{len(members)} files",
+            current=extracted_bytes,
+            total=total_bytes,
+            last_progress_at=last_progress_at,
+        )
+
+
+def print_progress(
+    label: str,
+    current: int,
+    total: int,
+    last_progress_at: float,
+) -> float:
+    now = time.monotonic()
+    if now - last_progress_at < PROGRESS_INTERVAL_SECONDS and current < total:
+        return last_progress_at
+
+    percent = (current / total * 100) if total else 100.0
+    print(f"{label}: {percent:6.2f}% ({format_bytes(current)} / {format_bytes(total)})", flush=True)
+    return now
+
+
+def format_bytes(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+
+    return f"{size} B"
 
 
 def split_archive_base(part: Path, combined_zip_dir: Path | None) -> Path:
