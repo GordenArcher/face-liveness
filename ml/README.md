@@ -163,18 +163,25 @@ That resumes the Google Drive parts and stops before assembly,
 extraction, and annotation validation.
 
 If the split archive parts are already downloaded on the internal disk,
-but the internal disk does not have enough free space to create the
-temporary combined zip, keep the parts where they are and assemble only
-the combined archive on an external volume:
+but the internal disk does not have enough free space for the combined
+zip and the extracted dataset (roughly 2-3x the compressed size),
+leave the parts where they are and send both the assembly and the
+extraction to an external volume with `--output-dir`:
 
 ```
 ./download_celeba_spoof.sh \
   --skip-download \
-  --assemble-only \
-  --combined-zip-dir /path/to/external-drive/celeba_spoof \
-  --skip-space-check \
+  --output-dir /path/to/external-drive/celeba_spoof \
   --i-accept-non-commercial-research-terms
 ```
+
+`--data-root` stays pointed at wherever the split parts already are;
+`--output-dir` is where the combined zip is assembled, where files are
+extracted, and where `validate_prepared_dataset` looks afterward. Point
+training's `--data-root` at this same `--output-dir` once it finishes.
+Only add `--skip-space-check` if you already know both volumes have
+enough room; otherwise let the preflight check catch it before an
+hours-long run gets partway through and dies on ENOSPC.
 
 This command reads the existing `CelebA_Spoof.zip.001` ...
 `CelebA_Spoof.zip.050` files from `ml/data/celeba_spoof/`, writes

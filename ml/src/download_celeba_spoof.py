@@ -81,10 +81,15 @@ def main():
         help="assemble already downloaded split zip parts, then stop before extraction and validation",
     )
     parser.add_argument(
-        "--combined-zip-dir",
+        "--output-dir",
         type=Path,
         default=None,
-        help="write the assembled CelebA-Spoof zip to this directory instead of beside the split parts",
+        help=(
+            "where the assembled zip AND the extracted dataset are written; defaults to "
+            "--data-root. Set this to a separate (e.g. external) volume when the split parts "
+            "already fill most of --data-root's disk, since assembly + extraction together need "
+            "roughly 2-3x the compressed dataset size in free space"
+        ),
     )
     parser.add_argument(
         "--keep-zips",
@@ -118,10 +123,28 @@ def main():
 
     require_dataset_terms(args.i_accept_non_commercial_research_terms)
     args.data_root.mkdir(parents=True, exist_ok=True)
-    if args.combined_zip_dir is not None:
-        args.combined_zip_dir.mkdir(parents=True, exist_ok=True)
+    # output_dir is resolved once, here, instead of threading an Optional[Path]
+    # through every helper below. Assembly and extraction both write the bulk
+    # of the data, so they both need to land wherever the caller actually has
+    # room, not wherever the split parts happened to be downloaded.
+    output_dir = args.output_dir if args.output_dir is not None else args.data_root
+    output_dir.mkdir(parents=True, exist_ok=True)
     if not args.skip_space_check:
-        assert_enough_free_space(args.data_root, args.min_free_gb)
+        # data_root only needs headroom when something is still going to be
+        # written there: a fresh download, or (when output_dir defaults to
+        # data_root) the combined zip and extraction too. With
+        # --skip-download and a separate --output-dir, data_root already
+        # holds everything it needs to hold, so demanding min_free_gb free
+        # there as well would block exactly the "parts fill the internal
+        # disk, send the rest external" case --output-dir exists for.
+        if not args.skip_download or output_dir == args.data_root:
+            assert_enough_free_space(args.data_root, args.min_free_gb)
+        # Checked separately because this is commonly a different physical
+        # disk than data_root. A pass on data_root's free space says
+        # nothing about the volume that receives the combined zip and
+        # every extracted file.
+        if output_dir != args.data_root:
+            assert_enough_free_space(output_dir, args.min_free_gb)
 
     if not args.skip_download:
         download_google_drive_folder(
@@ -131,7 +154,7 @@ def main():
         )
 
     if args.assemble_only:
-        assembly = assemble_split_archives(args.data_root, combined_zip_dir=args.combined_zip_dir)
+        assembly = assemble_split_archives(args.data_root, output_dir=output_dir)
         if not assembly.combined_archives:
             log_status("skip", f"no split zip archive parts found under {args.data_root}", color=Color.YELLOW)
             return
@@ -145,7 +168,7 @@ def main():
         extract_archives(
             args.data_root,
             keep_zips=args.keep_zips,
-            combined_zip_dir=args.combined_zip_dir,
+            output_dir=output_dir,
         )
 
     if args.no_extract:
@@ -156,8 +179,8 @@ def main():
             color=Color.GREEN,
         )
     else:
-        validate_prepared_dataset(args.data_root)
-        log_status("ready", f"CelebA-Spoof is ready at {args.data_root}", color=Color.GREEN)
+        validate_prepared_dataset(output_dir)
+        log_status("ready", f"CelebA-Spoof is ready at {output_dir}", color=Color.GREEN)
 
 
 def require_dataset_terms(accepted: bool) -> None:
@@ -238,8 +261,8 @@ def is_no_space_left(path: Path) -> bool:
         return exc.errno == 28
 
 
-def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | None) -> None:
-    assembly = assemble_split_archives(data_root, combined_zip_dir=combined_zip_dir)
+def extract_archives(data_root: Path, keep_zips: bool, output_dir: Path) -> None:
+    assembly = assemble_split_archives(data_root, output_dir=output_dir)
     archives = sorted(data_root.rglob("*.zip"))
     archive_paths = set(archives)
     for archive in assembly.combined_archives:
@@ -252,9 +275,25 @@ def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | 
         return
 
     for archive in archives:
-        log_status("extract", f"extracting {archive}", color=Color.BLUE)
-        with zipfile.ZipFile(archive) as zf:
-            extract_zip_with_progress(zf, data_root)
+        log_status("extract", f"extracting {archive} into {output_dir}", color=Color.BLUE)
+        try:
+            with zipfile.ZipFile(archive) as zf:
+                extract_zip_with_progress(zf, output_dir)
+        except OSError as exc:
+            if exc.errno == 28:
+                # Caught here instead of via the write-probe trick used for the
+                # gdown subprocess, because this exception already carries the
+                # real errno. archive is intentionally left in place (we only
+                # unlink after a successful extraction below), so rerunning the
+                # same command after freeing space, or pointing --output-dir at
+                # a larger volume, picks back up without re-downloading.
+                raise SystemExit(
+                    f"extraction stopped because {output_dir} ran out of disk space "
+                    f"while extracting {archive.name}. {archive.name} was kept so you can "
+                    "retry after freeing space, or rerun with a larger --output-dir; files "
+                    f"already extracted under {output_dir} do not need to be removed first."
+                ) from exc
+            raise
         if not keep_zips:
             archive.unlink()
 
@@ -263,14 +302,14 @@ def extract_archives(data_root: Path, keep_zips: bool, combined_zip_dir: Path | 
             part.unlink()
 
 
-def assemble_split_archives(data_root: Path, combined_zip_dir: Path | None) -> SplitArchiveAssembly:
+def assemble_split_archives(data_root: Path, output_dir: Path) -> SplitArchiveAssembly:
     split_parts = sorted(data_root.rglob("*.zip.[0-9][0-9][0-9]"))
     if not split_parts:
         return SplitArchiveAssembly(parts=[], combined_archives=[])
 
     groups: dict[Path, list[Path]] = {}
     for part in split_parts:
-        groups.setdefault(split_archive_base(part, combined_zip_dir=combined_zip_dir), []).append(part)
+        groups.setdefault(output_dir / part.with_suffix("").name, []).append(part)
 
     combined_archives: list[Path] = []
 
@@ -419,14 +458,6 @@ def format_bytes(size: int) -> str:
     return f"{size} B"
 
 
-def split_archive_base(part: Path, combined_zip_dir: Path | None) -> Path:
-    combined_name = part.with_suffix("").name
-    if combined_zip_dir is None:
-        return part.with_suffix("")
-
-    return combined_zip_dir / combined_name
-
-
 def assert_enough_space_for_combined_archive(combined_path: Path, parts: list[Path]) -> None:
     required_bytes = sum(part.stat().st_size for part in parts)
     free_bytes = shutil.disk_usage(combined_path.parent).free
@@ -442,11 +473,11 @@ def assert_enough_space_for_combined_archive(combined_path: Path, parts: list[Pa
     )
 
 
-def validate_prepared_dataset(data_root: Path) -> None:
+def validate_prepared_dataset(output_dir: Path) -> None:
     missing = []
     for split in ("train", "val", "test"):
         try:
-            annotation_path = find_annotation_file(data_root, split)
+            annotation_path = find_annotation_file(output_dir, split)
             print(f"found {split} annotations: {annotation_path}")
         except FileNotFoundError as exc:
             missing.append(str(exc))
