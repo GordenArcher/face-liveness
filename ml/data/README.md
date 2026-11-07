@@ -10,7 +10,7 @@ agreement or email required:
 3. Geometrically normalized images, 56M zip
 
 Use **format 2**, the face-detector output. That's the version this
-project's `dataset.py` is built around, it's already cropped to faces
+project's `liveness/datasets/nuaa/samples.py` is built around, it's already cropped to faces
 rather than full original photos, which is what both the LBP baseline
 and later models actually need as input.
 
@@ -31,14 +31,14 @@ ml/data/raw/
 ```
 
 `ClientFace/` and `ImposterFace/` are the two top-level folder names the
-format 2 zip actually uses. `dataset.py` recursively globs for images
+format 2 zip actually uses. `liveness/datasets/nuaa/samples.py` recursively globs for images
 under each, so whatever per-subject subdirectory structure exists
 underneath those two folders works without needing to flatten anything
 first.
 
 If your extracted structure looks different from the above, either
 rename/symlink to match it, or adjust the two folder names in
-`dataset.py` to match what you actually got.
+`liveness/datasets/nuaa/samples.py` to match what you actually got.
 
 Not committed to this repo (see `.gitignore`): real biometric data, even
 from a public research release, doesn't belong in git history.

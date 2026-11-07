@@ -22,6 +22,33 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
+## Layout
+
+Code lives under `liveness/`, grouped by capability:
+
+```
+liveness/
+  datasets/     NUAA and CelebA-Spoof loading, transforms, download
+  features/     LBP feature extraction
+  models/       SpoofCNN
+  metrics/      APCER/BPCER/ACER and fold summaries
+  training/     baseline, CNN, cross-validation, CelebA-Spoof
+  evaluation/   held-out evaluation and threshold sweeps
+  inference/    liveness gate boundary and CLI
+```
+
+Entry points are run as modules from this directory, for example:
+
+```
+python -m liveness.training.baseline
+```
+
+## Tests
+
+```
+python -m unittest discover -s tests -t .
+```
+
 ## NUAA
 
 NUAA is the first dataset used by this project. It is small and mostly
@@ -39,22 +66,22 @@ ml/data/raw/
 Train and evaluate the classical baseline:
 
 ```
-python src/train_baseline.py
-python src/evaluate.py
+python -m liveness.training.baseline
+python -m liveness.evaluation.baseline
 ```
 
 Train and evaluate the CNN on the same saved split:
 
 ```
-python src/train_cnn.py --epochs 15
-python src/evaluate_cnn.py
+python -m liveness.training.cnn --epochs 15
+python -m liveness.evaluation.cnn
 ```
 
 Run subject-disjoint k-fold validation:
 
 ```
-python src/cross_validate_baseline.py --n-splits 5
-python src/cross_validate_cnn.py --n-splits 5 --epochs 15
+python -m liveness.training.cross_validation.baseline --n-splits 5
+python -m liveness.training.cross_validation.cnn --n-splits 5 --epochs 15
 ```
 
 Current NUAA 5-fold result:
@@ -73,9 +100,9 @@ The default CNN threshold is `0.5`. A stricter threshold lowers spoof
 acceptance but raises live-user rejection:
 
 ```
-python src/evaluate_cnn.py --threshold 0.7
-python src/sweep_cnn_threshold.py
-python src/sweep_cnn_threshold.py --max-apcer 0.05
+python -m liveness.evaluation.cnn --threshold 0.7
+python -m liveness.evaluation.threshold_sweep
+python -m liveness.evaluation.threshold_sweep --max-apcer 0.05
 ```
 
 Thresholds are selected from validation metrics first and then reported
@@ -88,8 +115,8 @@ Use this to test one already-cropped face image against the saved model
 artifacts:
 
 ```
-python src/predict_liveness.py path/to/face.jpg --model cnn
-python src/predict_liveness.py path/to/face.jpg --model baseline
+python -m liveness.inference.cli path/to/face.jpg --model cnn
+python -m liveness.inference.cli path/to/face.jpg --model baseline
 ```
 
 This is a local ML boundary, not the final service interface. Full-frame
@@ -116,7 +143,7 @@ Download and prepare it:
 Equivalent Python command:
 
 ```
-python src/download_celeba_spoof.py --i-accept-non-commercial-research-terms
+python -m liveness.datasets.celeba_spoof.download --i-accept-non-commercial-research-terms
 ```
 
 The downloader uses `gdown` against the official Google Drive folder,
@@ -200,15 +227,15 @@ To download to a larger external volume:
 Train and evaluate on CelebA-Spoof:
 
 ```
-python src/train_cnn_celeba.py --epochs 15
-python src/evaluate_cnn_celeba.py
+python -m liveness.training.celeba_spoof --epochs 15
+python -m liveness.evaluation.celeba_spoof
 ```
 
 Smoke run before the full training job:
 
 ```
-python src/train_cnn_celeba.py --limit-train 1000 --limit-val 400 --epochs 1
-python src/evaluate_cnn_celeba.py --limit 400
+python -m liveness.training.celeba_spoof --limit-train 1000 --limit-val 400 --epochs 1
+python -m liveness.evaluation.celeba_spoof --limit 400
 ```
 
 The CelebA-Spoof result is the decision point before Go/service work. If

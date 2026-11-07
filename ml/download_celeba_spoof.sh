@@ -9,4 +9,4 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3.12}"
 fi
 
-"$PYTHON_BIN" src/download_celeba_spoof.py "$@"
+"$PYTHON_BIN" -m liveness.datasets.celeba_spoof.download "$@"

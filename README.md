@@ -107,7 +107,7 @@ dataset to find out where that CNN's assumptions break.
 
 ### A real bug: subject leakage in the original split
 
-The first version of `dataset.py` split at the image level, stratified
+The first version of the NUAA split code (`liveness/datasets/nuaa/split.py`) split at the image level, stratified
 by label only. NUAA numbers subjects identically across `ClientFace/`
 and `ImposterFace/` (subject `0007`'s live photos and photos of a spoof
 attack against them are both under a folder named `0007`), and with
@@ -121,7 +121,7 @@ doesn't exist at real verification time against someone the model has
 never seen. It's why the CNN's validation ACER hit exactly 0.0000: not
 a good model, a leaking one.
 
-`dataset.py` now splits by subject, no subject's images appear in more
+`liveness/datasets/nuaa/split.py` now splits by subject, no subject's images appear in more
 than one split. NUAA's total subject count is small (low double digits),
 so this produces a genuinely small number of test subjects, that's an
 honest limitation of the dataset itself, not something to hide by going
@@ -131,7 +131,7 @@ corrected split before either result means anything.
 
 ### A second real bug: noisy single-split validation
 
-Rerunning M2 on the corrected subject-disjoint split, `train_cnn.py`
+Rerunning M2 on the corrected subject-disjoint split, `liveness/training/cnn.py`
 selected its best checkpoint at validation ACER 0.0007, epoch 12 of 15.
 The same model scored 0.2216 ACER on the real held-out test set, a huge
 gap.
@@ -147,7 +147,7 @@ result, was the trustworthy number.
 
 ### Cross-validation
 
-`kfold.py`, `cross_validate_baseline.py`, and `cross_validate_cnn.py`
+`liveness/datasets/nuaa/kfold.py` and the two cross-validation entry points
 address this directly with subject-disjoint k-fold cross-validation,
 via sklearn's `GroupKFold` (group = subject_id). Every subject serves as
 test data in exactly one fold across the k runs, so the whole dataset
@@ -159,18 +159,19 @@ standard deviation itself is informative: small means the estimate is
 stable, large is an honest signal it still shouldn't be trusted to one
 decimal place.
 
-Both CV scripts call `kfold.make_folds` with the same `n_splits`, and
+Both CV entry points call `make_folds` with the same `n_splits`, and
 `GroupKFold`'s fold assignment is deterministic for a given input order,
 so the two models are evaluated on identical folds without either
-script needing to explicitly coordinate with the other.
+entry point needing to explicitly coordinate with the other.
 
 ```
-python src/cross_validate_baseline.py
-python src/cross_validate_cnn.py
+python -m liveness.training.cross_validation.baseline
+python -m liveness.training.cross_validation.cnn
 ```
 
-`cross_validate_cnn.py` trains a fresh model per fold (5 by default),
-expect roughly 5x the runtime of a single `train_cnn.py` run.
+The CNN cross-validation entry point trains a fresh model per fold (5
+by default), expect roughly 5x the runtime of a single
+`liveness/training/cnn.py` run.
 
 Current NUAA 5-fold results:
 
@@ -205,12 +206,12 @@ Get the dataset first, see `ml/data/README.md` for which of the three
 available formats to use.
 
 ```
-python src/train_baseline.py
-python src/evaluate.py
+python -m liveness.training.baseline
+python -m liveness.evaluation.baseline
 ```
 
-`train_baseline.py` writes the exact train/val/test split it used to
-`ml/models/split.json`. `evaluate.py` reads that back instead of
+The baseline trainer writes the exact train/val/test split it used to
+`ml/models/split.json`. The baseline evaluator reads that back instead of
 recomputing its own split, so the reported numbers are guaranteed to be
 against data the model never saw during training. If it recomputed the
 split independently, a later change to the splitting logic could
@@ -220,27 +221,27 @@ anyone noticing.
 
 ### M2: CNN trained from scratch
 
-Same split as M1, `train_cnn.py` reads `ml/models/split.json` directly
+Same split as M1, `liveness/training/cnn.py` reads `ml/models/split.json` directly
 rather than computing its own, so the comparison against M1's numbers
 is on identical data.
 
 ```
-python src/train_cnn.py
-python src/evaluate_cnn.py
+python -m liveness.training.cnn
+python -m liveness.evaluation.cnn
 ```
 
-`train_cnn.py` selects the best checkpoint by validation ACER, not
+`liveness/training/cnn.py` selects the best checkpoint by validation ACER, not
 validation loss, loss is what the optimizer minimizes but it isn't the
 number this project reports, the lowest-loss checkpoint and the
 lowest-ACER checkpoint aren't guaranteed to be the same epoch.
 
-`evaluate_cnn.py` defaults to a 0.5 live-score threshold. To see how a
-stricter gate changes spoof acceptance and live-user rejection, sweep
-thresholds on the saved validation/test split:
+`liveness/evaluation/cnn.py` defaults to a 0.5 live-score threshold. To
+see how a stricter gate changes spoof acceptance and live-user
+rejection, sweep thresholds on the saved validation/test split:
 
 ```
-python src/sweep_cnn_threshold.py
-python src/sweep_cnn_threshold.py --max-apcer 0.05
+python -m liveness.evaluation.threshold_sweep
+python -m liveness.evaluation.threshold_sweep --max-apcer 0.05
 ```
 
 The script selects a threshold using validation metrics first, then
@@ -252,14 +253,14 @@ the chosen gate still needs to be checked on broader data.
 
 ### Local liveness inference
 
-`liveness.py` is the integration boundary for the ML side. It loads
+`liveness/inference/predictor.py` is the integration boundary for the ML side. It loads
 either the baseline or CNN artifacts from `ml/models/` and returns the
 single decision the future service/client needs: whether the liveness
 gate passes and recognition is allowed to continue.
 
 ```
-python src/predict_liveness.py path/to/face.jpg --model cnn
-python src/predict_liveness.py path/to/face.jpg --model baseline
+python -m liveness.inference.cli path/to/face.jpg --model cnn
+python -m liveness.inference.cli path/to/face.jpg --model baseline
 ```
 
 The input is expected to be an already-cropped face image. Full-frame

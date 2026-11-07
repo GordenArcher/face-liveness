@@ -2,7 +2,7 @@
 ml/data/raw/
 ml/data/celeba_spoof/
 
-# trained model artifacts, regenerate via train_baseline.py
+# trained model artifacts, regenerate via the training entry points
 ml/models/*.joblib
 ml/models/*.pt
 ml/models/**/*.pt
